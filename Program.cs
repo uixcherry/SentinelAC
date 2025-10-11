@@ -93,6 +93,9 @@ namespace SentinelAC
                 scanEngine.RegisterDetector(new SystemManipulationDetector());
                 scanEngine.RegisterDetector(new MemoryScannerDetector());
                 scanEngine.RegisterDetector(new SandboxDetector());
+                scanEngine.RegisterDetector(new FileSystemDetector(signatureDatabase));
+                scanEngine.RegisterDetector(new StatisticalAnomalyDetector());
+                scanEngine.RegisterDetector(new BehavioralAnalyzer());
 
                 ScanReport report = await scanEngine.ExecuteFullScanAsync();
 
