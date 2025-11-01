@@ -30,6 +30,11 @@ namespace SentinelAC.Detectors
                 {
                     try
                     {
+                        string processName = process.ProcessName.ToLowerInvariant();
+
+                        if (processName.Contains("sentinelac"))
+                            continue;
+
                         if (_whitelistDatabase.IsTrustedProcess(process.ProcessName))
                             continue;
 

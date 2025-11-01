@@ -79,6 +79,14 @@ namespace SentinelAC.Detectors
                 {
                     try
                     {
+                        string processName = process.ProcessName.ToLowerInvariant();
+
+                        if (processName.Contains("sentinelac"))
+                        {
+                            process.Dispose();
+                            continue;
+                        }
+
                         if (IsMemoryScannerProcess(process))
                         {
                             results.Add(new DetectionResult
@@ -162,7 +170,7 @@ namespace SentinelAC.Detectors
                     "utorrent", "bittorrent", "qbittorrent",
                     "chrome", "firefox", "edge", "brave",
                     "steam", "epicgameslauncher", "origin",
-                    "discord", "spotify", "teamspeak"
+                    "discord", "spotify", "teamspeak", "sentinelac"
                 ];
 
                 if (skipProcesses.Any(sp => processName.Contains(sp)))

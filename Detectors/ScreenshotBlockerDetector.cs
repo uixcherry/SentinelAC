@@ -74,6 +74,8 @@ namespace SentinelAC.Detectors
             ];
 
             Process[] processes = Process.GetProcesses();
+            Dictionary<string, List<int>> overlayGroups = new Dictionary<string, List<int>>();
+
             foreach (Process process in processes)
             {
                 try
@@ -82,19 +84,11 @@ namespace SentinelAC.Detectors
 
                     if (overlayPatterns.Any(pattern => processName.Contains(pattern)))
                     {
-                        results.Add(new DetectionResult
+                        if (!overlayGroups.ContainsKey(processName))
                         {
-                            Type = DetectionType.ScreenshotBlocker,
-                            Level = ThreatLevel.Low,
-                            Description = $"Overlay software detected: {process.ProcessName}",
-                            Details = $"Process ID: {process.Id} (Can interfere with anti-cheat screenshots)",
-                            Metadata = new Dictionary<string, string>
-                            {
-                                ["ProcessName"] = process.ProcessName,
-                                ["ProcessId"] = process.Id.ToString(),
-                                ["Type"] = "Overlay"
-                            }
-                        });
+                            overlayGroups[processName] = new List<int>();
+                        }
+                        overlayGroups[processName].Add(process.Id);
                     }
                 }
                 catch
@@ -104,6 +98,32 @@ namespace SentinelAC.Detectors
                 {
                     process.Dispose();
                 }
+            }
+
+            foreach (KeyValuePair<string, List<int>> group in overlayGroups)
+            {
+                string processIds = group.Value.Count == 1
+                    ? group.Value[0].ToString()
+                    : string.Join(", ", group.Value);
+
+                string details = group.Value.Count == 1
+                    ? $"Process ID: {processIds} (Can interfere with anti-cheat screenshots)"
+                    : $"Process IDs: {processIds} ({group.Value.Count} instances, can interfere with anti-cheat screenshots)";
+
+                results.Add(new DetectionResult
+                {
+                    Type = DetectionType.ScreenshotBlocker,
+                    Level = ThreatLevel.Low,
+                    Description = $"Overlay software detected: {group.Key}",
+                    Details = details,
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["ProcessName"] = group.Key,
+                        ["ProcessIds"] = processIds,
+                        ["InstanceCount"] = group.Value.Count.ToString(),
+                        ["Type"] = "Overlay"
+                    }
+                });
             }
         }
     }
