@@ -78,7 +78,7 @@ namespace SentinelAC.Detectors
                 {
                     if (entry.TimeGenerated > cutoffTime &&
                         entry.Source == "Microsoft-Windows-Eventlog" &&
-                        entry.EventID == 104)
+                        entry.InstanceId == 104)
                     {
                         clearEvents.Add(entry);
                     }
