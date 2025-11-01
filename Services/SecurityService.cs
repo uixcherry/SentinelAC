@@ -8,6 +8,13 @@ namespace SentinelAC.Services
     [SupportedOSPlatform("windows")]
     public sealed class SecurityService
     {
+        private enum DebuggerType
+        {
+            None,
+            DevelopmentIDE,
+            CheatDebugger
+        }
+
         [DllImport("kernel32.dll")]
         private static extern bool IsDebuggerPresent();
 
@@ -34,12 +41,21 @@ namespace SentinelAC.Services
             Console.WriteLine("[Security] Running anti-tampering checks...");
             Console.ResetColor();
 
-            if (DetectDebugger())
+            DebuggerType debuggerType = DetectDebugger();
+
+            if (debuggerType == DebuggerType.CheatDebugger)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("⚠️ WARNING: Debugger detected! Scan may be compromised.");
+                Console.WriteLine("⚠️ CRITICAL: Cheat debugger detected! Scan terminated.");
                 Console.ResetColor();
                 return false;
+            }
+            else if (debuggerType == DebuggerType.DevelopmentIDE)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("⚠️ INFO: Development debugger detected (Visual Studio/Rider).");
+                Console.WriteLine("   Continuing scan - this is normal for development builds.");
+                Console.ResetColor();
             }
 
             if (DetectVirtualization())
@@ -64,18 +80,10 @@ namespace SentinelAC.Services
             return true;
         }
 
-        private bool DetectDebugger()
+        private DebuggerType DetectDebugger()
         {
-            if (IsDebuggerPresent())
-                return true;
-
-            if (Debugger.IsAttached)
-                return true;
-
-            bool isDebuggerPresent = false;
-            CheckRemoteDebuggerPresent(Process.GetCurrentProcess().Handle, ref isDebuggerPresent);
-            if (isDebuggerPresent)
-                return true;
+            string[] developmentIDEs = ["devenv", "rider64", "rider", "code", "vscode"];
+            string[] cheatDebuggers = ["x64dbg", "x32dbg", "ollydbg", "windbg", "ida", "ida64", "cheatengine"];
 
             try
             {
@@ -88,11 +96,18 @@ namespace SentinelAC.Services
                     Process parentProcess = Process.GetProcessById(pbi.InheritedFromUniqueProcessId.ToInt32());
                     string parentName = parentProcess.ProcessName.ToLowerInvariant();
 
-                    if (parentName.Contains("debugger") || parentName.Contains("x64dbg") || parentName.Contains("ollydbg"))
+                    if (developmentIDEs.Any(ide => parentName.Contains(ide)))
                     {
                         parentProcess.Dispose();
-                        return true;
+                        return DebuggerType.DevelopmentIDE;
                     }
+
+                    if (cheatDebuggers.Any(debugger => parentName.Contains(debugger)))
+                    {
+                        parentProcess.Dispose();
+                        return DebuggerType.CheatDebugger;
+                    }
+
                     parentProcess.Dispose();
                 }
             }
@@ -100,7 +115,24 @@ namespace SentinelAC.Services
             {
             }
 
-            return false;
+            if (Debugger.IsAttached)
+            {
+                return DebuggerType.DevelopmentIDE;
+            }
+
+            bool isDebuggerPresent = false;
+            CheckRemoteDebuggerPresent(Process.GetCurrentProcess().Handle, ref isDebuggerPresent);
+            if (isDebuggerPresent)
+            {
+                return DebuggerType.CheatDebugger;
+            }
+
+            if (IsDebuggerPresent())
+            {
+                return DebuggerType.CheatDebugger;
+            }
+
+            return DebuggerType.None;
         }
 
         private bool DetectVirtualization()
