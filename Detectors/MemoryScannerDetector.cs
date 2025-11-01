@@ -1,9 +1,9 @@
-﻿using System.Diagnostics;
+﻿using SentinelAC.Core.Interfaces;
+using SentinelAC.Core.Models;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
-using SentinelAC.Core.Interfaces;
-using SentinelAC.Core.Models;
 
 namespace SentinelAC.Detectors
 {
@@ -43,20 +43,29 @@ namespace SentinelAC.Detectors
         public DetectionType Type => DetectionType.MemoryScanner;
         public bool RequiresAdminRights => false;
 
-        private readonly byte[][] _cheatEngineSignatures =
-        [
-            // Cheat Engine signatures
-            Encoding.ASCII.GetBytes("Cheat Engine"),
-            Encoding.ASCII.GetBytes("CESERVER"),
-            Encoding.ASCII.GetBytes("speedhack"),
-            new byte[] { 0x8B, 0x45, 0xFC, 0x50, 0xFF, 0x15 }, // Common CE pattern
-            new byte[] { 0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x0C } // CE function prologue
-        ];
+        private readonly Dictionary<string, byte[]> _cheatSignatures = new()
+        {
+            ["CheatEngine_String1"] = Encoding.ASCII.GetBytes("Cheat Engine"),
+            ["CheatEngine_String2"] = Encoding.ASCII.GetBytes("CESERVER"),
+            ["CheatEngine_String3"] = Encoding.ASCII.GetBytes("speedhack"),
+            ["CheatEngine_String4"] = Encoding.ASCII.GetBytes("Dark Byte"),
+
+            ["CE_Pattern1"] = [0x64, 0xA1, 0x30, 0x00, 0x00, 0x00, 0x8B, 0x40, 0x0C],
+            ["CE_Pattern2"] = [0x8B, 0x4D, 0xFC, 0x8B, 0x01, 0xFF, 0x50, 0x08],
+
+            ["ArtMoney_String"] = Encoding.ASCII.GetBytes("ArtMoney"),
+
+            ["GameHacker_String"] = Encoding.ASCII.GetBytes("gamehack"),
+
+            ["Injection_LoadLibrary"] = [0x68, 0x00, 0x00, 0x00, 0x00, 0xE8, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xD0],
+
+            ["MemScan_Pattern1"] = [0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x05],
+        };
 
         private readonly string[] _suspiciousWindowTitles =
         [
             "cheat engine", "memory editor", "artmoney", "game hacker",
-            "memory scanner", "process hacker", "memory viewer"
+            "memory scanner", "process hacker", "memory viewer", "hex editor"
         ];
 
         public async Task<List<DetectionResult>> ScanAsync()
@@ -78,6 +87,7 @@ namespace SentinelAC.Detectors
                                 Level = ThreatLevel.Critical,
                                 Description = $"Memory scanner detected: {process.ProcessName}",
                                 Details = $"Process ID: {process.Id}, Window: {GetMainWindowTitle(process)}",
+                                ConfidenceScore = 0.95,
                                 Metadata = new Dictionary<string, string>
                                 {
                                     ["ProcessName"] = process.ProcessName,
@@ -87,25 +97,31 @@ namespace SentinelAC.Detectors
                             });
                         }
 
-                        if (ScanProcessMemoryForSignatures(process, out string foundSignature))
+                        if (IsSuspiciousForMemoryScan(process))
                         {
-                            results.Add(new DetectionResult
+                            if (ScanProcessMemoryForSignatures(process, out string foundSignature, out double confidence))
                             {
-                                Type = DetectionType.MemoryScanner,
-                                Level = ThreatLevel.High,
-                                Description = $"Cheat signature found in memory: {process.ProcessName}",
-                                Details = $"Process ID: {process.Id}, Signature: {foundSignature}",
-                                Metadata = new Dictionary<string, string>
+                                results.Add(new DetectionResult
                                 {
-                                    ["ProcessName"] = process.ProcessName,
-                                    ["ProcessId"] = process.Id.ToString(),
-                                    ["Signature"] = foundSignature
-                                }
-                            });
+                                    Type = DetectionType.MemoryScanner,
+                                    Level = DetermineThreatLevel(confidence),
+                                    Description = $"Cheat signature found in memory: {process.ProcessName}",
+                                    Details = $"Process ID: {process.Id}, Signature: {foundSignature}",
+                                    ConfidenceScore = confidence,
+                                    Metadata = new Dictionary<string, string>
+                                    {
+                                        ["ProcessName"] = process.ProcessName,
+                                        ["ProcessId"] = process.Id.ToString(),
+                                        ["Signature"] = foundSignature,
+                                        ["Confidence"] = confidence.ToString("F2")
+                                    }
+                                });
+                            }
                         }
                     }
                     catch
                     {
+                        // Ignore access denied errors
                     }
                     finally
                     {
@@ -133,9 +149,39 @@ namespace SentinelAC.Detectors
             }
         }
 
-        private bool ScanProcessMemoryForSignatures(Process process, out string foundSignature)
+        private static bool IsSuspiciousForMemoryScan(Process process)
+        {
+            try
+            {
+                string processName = process.ProcessName.ToLowerInvariant();
+
+                string[] skipProcesses =
+                [
+                    "system", "svchost", "csrss", "wininit", "services",
+                    "lsass", "explorer", "dwm", "conhost", "sihost",
+                    "utorrent", "bittorrent", "qbittorrent",
+                    "chrome", "firefox", "edge", "brave",
+                    "steam", "epicgameslauncher", "origin",
+                    "discord", "spotify", "teamspeak"
+                ];
+
+                if (skipProcesses.Any(sp => processName.Contains(sp)))
+                    return false;
+
+                return process.Threads.Count > 5 ||
+                       process.WorkingSet64 > 50 * 1024 * 1024 ||
+                       !string.IsNullOrEmpty(process.MainWindowTitle);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool ScanProcessMemoryForSignatures(Process process, out string foundSignature, out double confidence)
         {
             foundSignature = string.Empty;
+            confidence = 0.0;
 
             try
             {
@@ -148,7 +194,7 @@ namespace SentinelAC.Detectors
                     IntPtr address = IntPtr.Zero;
                     MEMORY_BASIC_INFORMATION memInfo;
                     int scannedRegions = 0;
-                    const int maxRegionsToScan = 100; // Limit for performance
+                    const int maxRegionsToScan = 50;
 
                     while (VirtualQueryEx(hProcess, address, out memInfo, (uint)Marshal.SizeOf(typeof(MEMORY_BASIC_INFORMATION))) != 0
                            && scannedRegions < maxRegionsToScan)
@@ -156,16 +202,19 @@ namespace SentinelAC.Detectors
                         if (memInfo.State == MEM_COMMIT &&
                             (memInfo.Protect == PAGE_READWRITE || memInfo.Protect == PAGE_EXECUTE_READWRITE))
                         {
-                            int regionSize = Math.Min((int)memInfo.RegionSize, 1024 * 1024); // Max 1MB per region
+                            int regionSize = Math.Min((int)memInfo.RegionSize, 512 * 1024);
                             byte[] buffer = new byte[regionSize];
 
                             if (ReadProcessMemory(hProcess, memInfo.BaseAddress, buffer, regionSize, out int bytesRead))
                             {
-                                foreach (var signature in _cheatEngineSignatures)
+                                foreach (var signatureEntry in _cheatSignatures)
                                 {
-                                    if (SearchPattern(buffer, signature))
+                                    if (SearchPattern(buffer, signatureEntry.Value))
                                     {
-                                        foundSignature = BitConverter.ToString(signature).Replace("-", " ");
+                                        foundSignature = signatureEntry.Key;
+
+                                        confidence = signatureEntry.Key.Contains("String") ? 0.99 : 0.75;
+
                                         return true;
                                     }
                                 }
@@ -183,6 +232,7 @@ namespace SentinelAC.Detectors
             }
             catch
             {
+                // Ignore errors
             }
 
             return false;
@@ -190,6 +240,9 @@ namespace SentinelAC.Detectors
 
         private static bool SearchPattern(byte[] data, byte[] pattern)
         {
+            if (pattern.Length > data.Length)
+                return false;
+
             int patternLength = pattern.Length;
             int dataLength = data.Length - patternLength;
 
@@ -198,7 +251,7 @@ namespace SentinelAC.Detectors
                 bool found = true;
                 for (int j = 0; j < patternLength; j++)
                 {
-                    if (data[i + j] != pattern[j])
+                    if (pattern[j] != 0x00 && data[i + j] != pattern[j])
                     {
                         found = false;
                         break;
@@ -209,6 +262,17 @@ namespace SentinelAC.Detectors
             }
 
             return false;
+        }
+
+        private static ThreatLevel DetermineThreatLevel(double confidence)
+        {
+            return confidence switch
+            {
+                >= 0.9 => ThreatLevel.Critical,
+                >= 0.75 => ThreatLevel.High,
+                >= 0.5 => ThreatLevel.Medium,
+                _ => ThreatLevel.Low
+            };
         }
 
         private static string GetMainWindowTitle(Process process)
