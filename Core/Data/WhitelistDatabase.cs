@@ -203,7 +203,7 @@ namespace SentinelAC.Core.Data
                 @"^c:\\program files\\bluestacks.*",
                 @"^c:\\programdata\\bluestacks.*",
                 @"^c:\\users\\[^\\]+\\appdata\\local\\bluestacks.*",
-                @"^c:\\users\\[^\\]+\\appdata\\local\\temp\\[a-f0-9\-]+\.tmp\.node$"
+                @"^c:\\users\\.*\\appdata\\local\\temp\\.*\.tmp\.node$"
             ];
 
             foreach (string pattern in patterns)

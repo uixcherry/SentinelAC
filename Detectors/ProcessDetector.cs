@@ -72,6 +72,9 @@ namespace SentinelAC.Detectors
             {
             }
 
+            if (processName.Contains("sentinelac"))
+                return null;
+
             if (_whitelistDatabase.IsTrustedProcess(processName))
                 return null;
 
