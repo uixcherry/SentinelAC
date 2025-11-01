@@ -31,7 +31,7 @@ namespace SentinelAC
     ███████║███████╗██║ ╚████║   ██║   ██║██║ ╚████║███████╗███████╗    ██║  ██║╚██████╗
     ╚══════╝╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝    ╚═╝  ╚═╝ ╚═════╝
                                                                                           
-                        Advanced Anti-Cheat Detection System v1.1
+                        Advanced Anti-Cheat Detection System v1.2
             ");
             Console.ResetColor();
             Console.WriteLine();
@@ -55,6 +55,22 @@ namespace SentinelAC
             try
             {
                 PrintBanner();
+
+                SecurityService securityService = new SecurityService();
+                securityService.DisplaySecurityBanner();
+
+                if (!securityService.PerformSecurityChecks())
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("\n✗ Security checks failed. Scan terminated.");
+                    Console.WriteLine("This may indicate tampering or debugging attempts.");
+                    Console.ResetColor();
+                    Console.WriteLine("\nPress any key to exit...");
+                    Console.ReadKey(true);
+                    return;
+                }
+
+                Console.WriteLine();
                 PrintSystemInfo();
 
                 if (!IsAdministrator())
@@ -96,11 +112,36 @@ namespace SentinelAC
                 scanEngine.RegisterDetector(new FileSystemDetector(signatureDatabase));
                 scanEngine.RegisterDetector(new StatisticalAnomalyDetector());
                 scanEngine.RegisterDetector(new BehavioralAnalyzer());
+                scanEngine.RegisterDetector(new RegistryCleanerDetector());
+                scanEngine.RegisterDetector(new EventLogTamperingDetector());
+                scanEngine.RegisterDetector(new AntiForensicsDetector());
 
                 ScanReport report = await scanEngine.ExecuteFullScanAsync();
 
                 IReportGenerator reportGenerator = new ConsoleReportGenerator();
                 reportGenerator.GenerateConsoleReport(report);
+
+                Console.WriteLine();
+                Console.Write("Send report to Discord? (y/n): ");
+                string? discordResponse = Console.ReadLine()?.ToLowerInvariant() ?? "n";
+
+                if (discordResponse == "y" || discordResponse == "yes")
+                {
+                    Console.WriteLine();
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+                    Console.WriteLine("Sending report to Discord...");
+                    Console.ResetColor();
+
+                    DiscordWebhookService discordService = new DiscordWebhookService();
+                    bool sent = await discordService.SendReportAsync(report);
+
+                    if (!sent)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine("Failed to send to Discord. Report will be saved locally instead.");
+                        Console.ResetColor();
+                    }
+                }
 
                 Console.WriteLine();
                 Console.Write("Would you like to save this report to a file? (y/n): ");
