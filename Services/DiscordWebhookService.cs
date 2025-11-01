@@ -17,17 +17,17 @@ namespace SentinelAC.Services
 
         private static string DecryptWebhookUrl()
         {
-            byte[] encryptedData = Convert.FromBase64String(
-                "aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTQzNDIwNjkyMTQ4ODg2MzQ0Ni9rRjI4YU9aYXRxUC1SXzJnb2xLX2VzY2gtQ3UwZUJUbV9FUTM3UENiZmN3U2tocXJYZ2tWbklNbkxtTTZIR1E2b2lU"
-            );
+            string encryptedBase64 = "OhEXBVsGSRxdFgUJCl8dSQZJXREbFB8aGxoSGx0UCg8JXBwTFw4IFQoOFg0JHQ4JCQAVFgsDBQURGwsdEhgKFxgPBRkbXg8WFw0XFB4PGBceDBkGEg0MDwcGBQoNDA8TGAkFGw0SGw8FBQpbERsOEQoWEBcBFgYaBwEIHBgMCg==";
 
-            StringBuilder decrypted = new StringBuilder();
+            byte[] encryptedData = Convert.FromBase64String(encryptedBase64);
+            byte[] decrypted = new byte[encryptedData.Length];
+
             for (int i = 0; i < encryptedData.Length; i++)
             {
-                decrypted.Append((char)(encryptedData[i] ^ _obfuscationKey[i % _obfuscationKey.Length]));
+                decrypted[i] = (byte)(encryptedData[i] ^ _obfuscationKey[i % _obfuscationKey.Length]);
             }
 
-            return Encoding.UTF8.GetString(Convert.FromBase64String(decrypted.ToString()));
+            return Encoding.UTF8.GetString(decrypted);
         }
 
         public async Task<bool> SendReportAsync(ScanReport report)
